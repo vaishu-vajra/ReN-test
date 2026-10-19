@@ -28,3 +28,7 @@ playwright>=1.40
 playwright-stealth>=1.0
 brotli
 curl_cffi
+pytest
+pytest-mock
+fakeredis
+mongomock
