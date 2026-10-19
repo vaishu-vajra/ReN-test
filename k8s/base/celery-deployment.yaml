@@ -36,7 +36,7 @@ spec:
             # Without -Q the worker consumes only `default`, so anything routed
             # to the dedicated DIAL Global queue would queue up forever.
             - "-Q"
-            - "default,dial_global,ren"
+            - "default,dial_global,ren,financial"
           envFrom:
             - configMapRef:
                 name: app-config

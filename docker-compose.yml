@@ -18,7 +18,7 @@ services:
     # Without it the worker consumes only `default`, and anything routed to the
     # dial_global or ren queues sits in Redis forever with no error anywhere —
     # the task is accepted, dispatched, and simply never picked up.
-    command: celery -A data_ingestion_engine worker --loglevel=info --concurrency=4 -Q default,dial_global,ren
+    command: celery -A data_ingestion_engine worker --loglevel=info --concurrency=4 -Q default,dial_global,ren,financial
     depends_on:
       - redis
     env_file: .env

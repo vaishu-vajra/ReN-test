@@ -126,7 +126,7 @@ Two processes, in two terminals:
 PYTHONUNBUFFERED=1 python manage.py runserver 0.0.0.0:8000
 
 # Workers — list every queue (see the warning below)
-celery -A data_ingestion_engine worker --loglevel=info --concurrency=2 -Q default,dial_global,ren
+celery -A data_ingestion_engine worker --loglevel=info --concurrency=2 -Q default,dial_global,ren,financial
 ```
 
 Or run everything in containers:
