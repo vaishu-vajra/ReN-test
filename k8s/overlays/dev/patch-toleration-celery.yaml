@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery
+spec:
+  # 1. Update Replicas
+  replicas: 1
+  template:
+    spec:
+      # 2. Add Tolerations
+      tolerations:
+        - key: "sandbox.gke.io/runtime"
+          operator: "Equal"
+          value: "gvisor"
+          effect: "NoSchedule"
+      # 3. Fix Node Selector (Optional, if you used this patch)
+      nodeSelector: {}

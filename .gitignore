@@ -1,0 +1,70 @@
+venv/
+.env
+
+# macOS Finder metadata
+.DS_Store
+static/
+scandals.yml
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+
+
+data_ingestion_engine/utils/__pycache__
+.codegpt
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.env
+*.db
+*.sqlite3
+*.log
+*.pot
+*.mo
+*.egg-info/
+*.egg
+*.egg-info
+*.whl
+*.zip
+*.tar.gz
+
+pdfs/
+# Progressive ReN run artefacts — regenerate these, never trust a committed copy.
+# The baseline snapshot in particular is a 14 MB rollback file that belongs in
+# GCS or on the operator's machine, not in git history.
+ren_baseline_*.json
+ren_progressive_*.json
+ren_type_audit.json
+ren_type_audit.csv
+ren_universe.json
+pilot.json
+pilot_results*.csv
+pilot_results*.xlsx
+local_progressive_run.json
+failed_ren_*.csv
+year_fix_report.csv
+
+# Exported workbooks and delivered final files. Every one of these is produced
+# by a script in data_ingestion_engine/scripts/ — regenerate rather than commit.
+# Curated INPUT lists (the Mastersheet/Below 70/Problem Companies CSVs, the
+# *_overrides.csv files, datax_sp500.csv) are deliberately still tracked.
+ren_progressive_*.xlsx
+ren_final_*.xlsx
+ren_final_*_excluded.csv
+ren_group_test*.xlsx
+ren_test_*.xlsx
+dial_global_final*.xlsx
+dial_global_final*.numbers
+dg_turkish_[0-9]*.json
+dg_turkish_[0-9]*.xlsx
+# Company-id lookups written by scripts/dg_company_ids.py
+dg_*_ids.json
+
+# Saved API payloads and per-run failure dumps — snapshots of one invocation,
+# not configuration. Rebuild from resolve_company_cohort.py.
+*_request_body*.json
+failed_urls_*.json
+dgi_resolved.json
+dgi_resolved.csv

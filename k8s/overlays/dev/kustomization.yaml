@@ -1,0 +1,48 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+namespace: dev
+
+# Kustomize creates the configmap with a hash (e.g., app-config-b9fg82cfk8)
+configMapGenerator:
+  - name: app-config
+    literals:
+      - CELERY_BROKER_URL="redis://redis:6379/0"
+      - CELERY_RESULT_BACKEND="redis://redis:6379/0"
+      - DEBUG="True"
+      # Citation links in generated analysis point at this front end, so dev
+      # cites dev. Not a secret: it is the public address of the web app.
+      - REN_APP_BASE_URL=https://dev.myrenx.ai
+      # Longest highlight put in a citation link, and the safety valve for a
+      # citation token the model never closes. Defaults live in
+      # utils/citations.py; set here so they can be tuned without a redeploy.
+      - CITATION_MAX_QUOTE_CHARS=1200
+      - CITATION_MAX_HELD_CHARS=4000
+
+# This replaces your old "kubectl create secret" command
+secretGenerator:
+  - name: app-secrets
+    envs:
+      - .env  # This looks for the .env file inside the 'dev' folder
+    type: Opaque
+  - name: django-secret
+    literals:
+      - DJANGO_SECRET_KEY="dev-insecure-key"
+
+patches:
+  - path: patch-celery.yaml
+  - path: patch-web.yaml
+  - path: patch-ingress.yaml
+  - path: patch-toleration-celery.yaml  
+  - path: patch-toleration-web.yaml
+  - path: patch-toleration-redis.yaml
+  - target:
+      kind: ManagedCertificate
+      name: web-cert
+    patch: |-
+      - op: replace
+        path: /spec/domains/0
+        value: dev-ingestion-engine.myrenx.ai

@@ -1,0 +1,32 @@
+services:
+  web:
+    build: .
+    command: gunicorn --timeout 120 data_ingestion_engine.wsgi:application --bind 0.0.0.0:80 --workers 3
+    ports:
+      - "80:80"
+    depends_on:
+      - redis
+      - celery
+    env_file: .env
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+
+  celery:
+    build: .
+    # -Q must list every queue, matching k8s/base/celery-deployment.yaml.
+    # Without it the worker consumes only `default`, and anything routed to the
+    # dial_global or ren queues sits in Redis forever with no error anywhere —
+    # the task is accepted, dispatched, and simply never picked up.
+    command: celery -A data_ingestion_engine worker --loglevel=info --concurrency=4 -Q default,dial_global,ren
+    depends_on:
+      - redis
+    env_file: .env
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+
+  redis:
+    image: "redis:latest"
+    ports:
+      - "6379:6379"

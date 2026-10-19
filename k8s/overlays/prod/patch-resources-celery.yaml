@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery
+spec:
+  template:
+    spec:
+      # Move celery onto the larger render pool (e2-standard-4). e2-medium
+      # (~0.94 vCPU / 2.87Gi allocatable) cannot run headless Chromium at this
+      # concurrency without OOM-thrashing.
+      nodeSelector:
+        cloud.google.com/gke-nodepool: render-pool
+      containers:
+        - name: celery
+          resources:
+            # cpu request of 3 forces one celery pod per e2-standard-4 node
+            # (~3.9 vCPU allocatable), so each pod gets a whole node's CPU.
+            # No cpu limit -> pods may burst to the full 4 vCPU.
+            requests:
+              cpu: "3"
+              memory: 6Gi
+            # Hard memory cap so a runaway spike in Chromium/LibreOffice can't
+            # take the node down; with DOWNLOAD_WORKERS=2 the pod peaks ~3.5Gi.
+            limits:
+              memory: 10Gi

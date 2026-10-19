@@ -1,0 +1,29 @@
+# The prod node pools carry the gVisor taint; without this the nightly Job and
+# the shell pod stay Pending forever. Mirrors patch-toleration-celery.yaml.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bulk-analysis
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          tolerations:
+            - key: "sandbox.gke.io/runtime"
+              operator: "Equal"
+              value: "gvisor"
+              effect: "NoSchedule"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bulk-analysis-shell
+spec:
+  template:
+    spec:
+      tolerations:
+        - key: "sandbox.gke.io/runtime"
+          operator: "Equal"
+          value: "gvisor"
+          effect: "NoSchedule"

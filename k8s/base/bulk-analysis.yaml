@@ -1,0 +1,172 @@
+# k8s/base/bulk-analysis.yaml
+#
+# The night-window bulk analysis run: risk analysis, gap analysis and earnings
+# delta over the whole company corpus.
+#
+# Shipped SUSPENDED. Applying this file creates the CronJob and its volume but
+# runs nothing — the job spends real money on model calls, so starting it is a
+# deliberate act:
+#
+#     kubectl patch cronjob bulk-analysis -n prod \
+#         -p '{"spec":{"suspend":false}}'
+#
+# Shape of the schedule: start at 22:00, stop at 06:00, resume tomorrow. The
+# work is one long resumable queue rather than a nightly batch — the state file
+# on the PVC is what carries progress from one night to the next, so an
+# interrupted run costs only its in-flight calls.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bulk-analysis-state
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # Holds the cohort JSON, the coverage export, the append-only state file
+      # and the results JSON. The state file is one short line per completed
+      # unit; results carry the generated text, which is the part that grows.
+      storage: 20Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bulk-analysis
+spec:
+  # 22:00 every night. Wall clock in the timeZone below, not UTC.
+  schedule: "0 22 * * *"
+  # Requires GKE 1.27+. If the API server rejects this field, delete it and
+  # express the schedule in UTC instead.
+  timeZone: "Europe/Tirane"
+  suspend: true
+  # Never two runs at once: they would share one PVC and one state file, and
+  # both would pay for the same units.
+  concurrencyPolicy: Forbid
+  # If the cluster was busy at 22:00, still start up to an hour late; past that
+  # the window is too short to be worth a run.
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    spec:
+      # No retries. A failed unit is already recorded in the state file and is
+      # retried on its own next night; restarting the whole Job would just
+      # re-walk the queue.
+      backoffLimit: 0
+      # Hard backstop at 8h30m, half an hour after --stop-at. The script should
+      # always stop itself first — this only fires if it hangs.
+      activeDeadlineSeconds: 30600
+      template:
+        spec:
+          serviceAccountName: ingestion-engine-ksa
+          restartPolicy: Never
+          # On SIGTERM the script stops starting new calls and lets in-flight
+          # ones finish. A model call over several PDFs can take a few minutes,
+          # so give it room rather than having Kubernetes SIGKILL it mid-write.
+          terminationGracePeriodSeconds: 600
+          containers:
+            - name: bulk-analysis
+              # Same image as celery: same code, no extra build step. Cloud
+              # Build rewrites this tag along with the celery deployment's.
+              image: europe-west1-docker.pkg.dev/my-renx-ai/data-ingestion-engine-repo/celery:latest
+              imagePullPolicy: Always
+              command: ["python", "-m", "data_ingestion_engine.scripts.run_bulk_analysis"]
+              args:
+                - "--cohort=/state/cohort.json"
+                - "--coverage=/state/coverage.csv"
+                - "--state=/state/run.state.jsonl"
+                - "--out=/state/results.json"
+                - "--out-csv=/state/results.csv"
+                # Stop starting new calls at 06:00 local. In-flight calls
+                # finish, the rest waits for tomorrow night.
+                - "--stop-at=06:00"
+                - "--workers=8"
+                # Writes analysis to DataX. Sections that ALREADY hold
+                # analysis are skipped, never replaced — that needs an explicit
+                # --overwrite, which must not be added here. Remove this line
+                # for a dry run that costs the same model calls and stores
+                # nothing.
+                - "--store"
+                # No TTY in a pod: without this the confirmation prompt reads
+                # EOF and the run aborts every night.
+                - "--yes"
+              env:
+                # Makes --stop-at and the log timestamps agree with the
+                # schedule above.
+                - name: TZ
+                  value: "Europe/Tirane"
+              envFrom:
+                - configMapRef:
+                    name: app-config
+                - secretRef:
+                    name: app-secrets
+                - secretRef:
+                    name: django-secret
+              resources:
+                requests:
+                  cpu: "1"
+                  memory: 2Gi
+                limits:
+                  # Each worker holds one document set in memory while it
+                  # streams. 8 workers over large PDFs is the peak.
+                  memory: 6Gi
+              volumeMounts:
+                - name: state
+                  mountPath: /state
+          volumes:
+            - name: state
+              persistentVolumeClaim:
+                claimName: bulk-analysis-state
+---
+# Scaled to zero. Scale it to 1 when you need to put the cohort and coverage
+# files onto the volume, or to read the state and results back off it:
+#
+#     kubectl scale deploy/bulk-analysis-shell -n prod --replicas=1
+#     kubectl cp corpus_cohort.json prod/<pod>:/state/cohort.json
+#     kubectl cp datax_coverage.csv prod/<pod>:/state/coverage.csv
+#     kubectl cp prod/<pod>:/state/results.csv ./results.csv
+#     kubectl scale deploy/bulk-analysis-shell -n prod --replicas=0
+#
+# It must be at zero while the CronJob runs: the volume is ReadWriteOnce, so a
+# shell pod holding it can leave the nightly Job unschedulable.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bulk-analysis-shell
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: bulk-analysis-shell
+  template:
+    metadata:
+      labels:
+        app: bulk-analysis-shell
+    spec:
+      serviceAccountName: ingestion-engine-ksa
+      containers:
+        - name: shell
+          image: europe-west1-docker.pkg.dev/my-renx-ai/data-ingestion-engine-repo/celery:latest
+          imagePullPolicy: Always
+          command: ["sleep", "infinity"]
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secrets
+            - secretRef:
+                name: django-secret
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+            limits:
+              memory: 4Gi
+          volumeMounts:
+            - name: state
+              mountPath: /state
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: bulk-analysis-state

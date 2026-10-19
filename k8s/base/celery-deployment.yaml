@@ -1,0 +1,58 @@
+# k8s/celery-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: celery
+  template:
+    metadata:
+      labels:
+        app: celery
+    spec:
+      serviceAccountName: ingestion-engine-ksa
+      # A store_docs chunk runs ~2-3 min. On SIGTERM (HPA scale-down, node
+      # drain, or a rollout) Celery does a WARM shutdown: it stops taking new
+      # tasks and finishes the in-flight chunk. Give it enough time to complete
+      # so the chunk isn't SIGKILLed at the default 30s and rescheduled
+      # (which caused reprocessing/duplicate work and the slow "warm shutdown").
+      terminationGracePeriodSeconds: 600
+      nodeSelector:                      # <<< ADD THIS
+        cloud.google.com/gke-nodepool: wi-pool-storage
+      containers:
+        - name: celery
+          image: europe-west1-docker.pkg.dev/my-renx-ai/data-ingestion-engine-repo/celery:latest
+          imagePullPolicy: Always
+          args:
+            - "celery"
+            - "-A"
+            - "data_ingestion_engine"
+            - "worker"
+            - "--loglevel=info"
+            - "--concurrency=4"
+            # Without -Q the worker consumes only `default`, so anything routed
+            # to the dedicated DIAL Global queue would queue up forever.
+            - "-Q"
+            - "default,dial_global,ren"
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: django-secret
+            - secretRef:
+                name: app-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: celery
+spec:
+  type: ClusterIP
+  selector:
+    app: celery
+  ports:
+    - port: 5672
+      targetPort: 5672

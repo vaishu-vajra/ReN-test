@@ -1,0 +1,90 @@
+substitutions:
+  _REPO: "data-ingestion-engine-repo"
+  _PROJECT_ID: "my-renx-ai"
+  _ZONE: "europe-west1-b"
+  # Defaults (Safe for Dev).
+  # IMPORTANT: For PRODUCTION, create a separate Cloud Build Trigger for the 'main' branch
+  # and override these values in the Trigger settings:
+  # _CLUSTER: data-ingestion-cluster
+  # _ENV: prod
+  # _SECRET_NAME: ingestion-env-prod
+  _CLUSTER: "data-ingestion-cluster-dev"
+  _ENV: "dev"
+  _SECRET_NAME: "ingestion-env-dev"
+
+steps:
+# ─── 1. Build & Push Web ────────────────────────────────────────────────
+- name: "gcr.io/cloud-builders/docker"
+  args:
+    [
+      "build",
+      "--target", "web",
+      "-t", "europe-west1-docker.pkg.dev/$_PROJECT_ID/${_REPO}/web:${SHORT_SHA}",
+      ".",
+    ]
+
+- name: "gcr.io/cloud-builders/docker"
+  args:
+    [
+      "push",
+      "europe-west1-docker.pkg.dev/$_PROJECT_ID/${_REPO}/web:${SHORT_SHA}",
+    ]
+
+# ─── 2. Build & Push Celery ─────────────────────────────────────────────
+- name: "gcr.io/cloud-builders/docker"
+  args:
+    [
+      "build",
+      "--target", "celery",
+      "-t", "europe-west1-docker.pkg.dev/$_PROJECT_ID/${_REPO}/celery:${SHORT_SHA}",
+      ".",
+    ]
+
+- name: "gcr.io/cloud-builders/docker"
+  args:
+    [
+      "push",
+      "europe-west1-docker.pkg.dev/$_PROJECT_ID/${_REPO}/celery:${SHORT_SHA}",
+    ]
+
+# ─── 3. Fetch .env from Secret Manager ──────────────────────────────────
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      echo "Fetching secrets for environment: ${_ENV}"
+      # ADD THE --project FLAG HERE ⬇️
+      gcloud secrets versions access latest --secret="${_SECRET_NAME}" --project="${_PROJECT_ID}" > k8s/overlays/${_ENV}/.env
+      
+# ─── 4. Prepare & Deploy with Kustomize ─────────────────────────────────
+- name: "gcr.io/cloud-builders/gcloud"
+  entrypoint: "bash"
+  args:
+    - "-c"
+    - |
+      # Configure kubectl
+      gcloud container clusters get-credentials "${_CLUSTER}" --zone "${_ZONE}" --project "${_PROJECT_ID}"
+
+      echo "Deploying to ${_ENV}..."
+
+      # A. Update the image tags in the Kustomize files dynamically
+      # We use 'sed' to inject the new image tag into the Kustomization file before applying
+      # Note: This assumes you are deploying the overlay
+      cd k8s/overlays/${_ENV}
+      kustomize edit set image europe-west1-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/web:latest=europe-west1-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/web:${SHORT_SHA}
+      kustomize edit set image europe-west1-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/celery:latest=europe-west1-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/celery:${SHORT_SHA}
+      cd ../../..
+
+      # B. Ensure namespace exists
+      kubectl create namespace ${_ENV} --dry-run=client -o yaml | kubectl apply -f -
+
+      # C. Apply the Kustomize Overlay (Config + Secrets + Images)
+      kubectl apply -k k8s/overlays/${_ENV}
+
+      # D. Wait for rollout to finish
+      kubectl rollout status deployment/web --namespace=${_ENV}
+      kubectl rollout status deployment/celery --namespace=${_ENV}
+
+options:
+  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET

@@ -1,0 +1,8 @@
+# k8s/ksa.yaml  
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ingestion-engine-ksa
+  namespace: default
+  annotations:
+    iam.gke.io/gcp-service-account: gemini-sa@my-renx-ai.iam.gserviceaccount.com

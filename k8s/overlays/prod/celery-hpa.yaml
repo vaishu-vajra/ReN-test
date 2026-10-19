@@ -1,0 +1,33 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: celery
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: celery
+  minReplicas: 3
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # Scale out when pods sustain >70% of their 3-vCPU request.
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+    scaleDown:
+      # CPU is a coarse signal for a Celery queue: it dips between chunks / during
+      # download I/O waits even while the queue is still full. Scale IN very slowly
+      # so a momentary CPU dip mid-run doesn't kill a busy worker: require 15 min
+      # of sustained low CPU, then remove at most 1 pod every 5 min.
+      stabilizationWindowSeconds: 900
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 300
+      selectPolicy: Min

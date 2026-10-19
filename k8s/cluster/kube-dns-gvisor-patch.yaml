@@ -1,0 +1,35 @@
+# Lets the cluster's kube-dns schedule onto GKE Sandbox (gVisor) and arm64
+# nodes, whose taints it does not tolerate by default.
+#
+# Cluster-level and applied by hand: it is not part of any overlay, and
+# Cloud Build never applies it. Re-apply it if the cluster is recreated:
+#   kubectl -n kube-system patch deployment kube-dns --patch-file k8s/cluster/kube-dns-gvisor-patch.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-dns
+  namespace: kube-system
+spec:
+  template:
+    spec:
+      tolerations:
+      - key: "sandbox.gke.io/runtime"
+        operator: "Equal"
+        value: "gvisor"
+        effect: "NoSchedule"
+      - key: "CriticalAddonsOnly"
+        operator: "Exists"
+      - key: "components.gke.io/gke-managed-components"
+        operator: "Exists"
+      - key: "kubernetes.io/arch"
+        operator: "Equal"
+        value: "arm64"
+        effect: "NoSchedule"
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300

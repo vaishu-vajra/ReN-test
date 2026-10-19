@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - celery-deployment.yaml
+  - redis-deployment.yaml
+  - web-deployment.yaml
+  - web-ingress.yaml
+  - managed-cert.yaml
+  - ksa.yaml 
+  - bulk-analysis.yaml   # suspended CronJob; see the header in that file
+  - frontend-config.yaml
+  - backend-config.yaml
+  # Note: We do NOT include config.yaml here if the values are totally different per env.
+  # We will generate the config in the overlays instead.

@@ -1,0 +1,9 @@
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: web-frontend-config
+spec:
+  # Also a good practice to enable HTTPS redirection
+  # Also a good practice to enable HTTPS redirection
+  redirectToHttps:
+    enabled: true
